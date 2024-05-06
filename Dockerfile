@@ -1,21 +1,48 @@
-# Base image
-FROM node:18-alpine
+###################
+# BUILD FOR LOCAL DEVELOPMENT
+###################
+
+FROM node:18-alpine As development
 
 # Create app directory
 WORKDIR /usr/src/app
 
-# A wildcard is used to ensure both package.json AND package-lock.json are copied
-COPY package*.json ./
+# Bundle app source
+COPY --chown=node:node . .
 
 # Install app dependencies
-RUN npm install
+RUN npm ci
 
-# Bundle app source
-COPY . .
+# Use the node user from the image (insted of root)
+USER node
 
-# Create a build of the app with production build
+###################
+# BUILD FOR PRODUCTION
+###################
+
+FROM node:18-alpine As build
+
+WORKDIR /usr/src/app
+
+COPY --chown=node:node . .
+
+COPY --chown=node:node --from=development /usr/src/app/node_modules ./node_modules
+
 RUN npm run build
 
-# Start production server
-CMD ["npm", "run", "start:prod"]
+ENV NODE_ENV production
 
+RUN npm ci --only=production && npm cache clean --force
+
+USER node
+
+###################
+# PRODUCTION
+###################
+
+FROM node:18-alpine As production
+
+COPY --chown=node:node --from=build /usr/src/app/node_modules ./node_modules
+COPY --chown=node:node --from=build /usr/src/app/dist ./dist
+
+CMD ["npm", "run", "start:prod"]
